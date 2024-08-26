@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <stdio.h>
 
 #define WIDTH 640
 #define HEIGHT 480
@@ -66,6 +67,7 @@ int main(int argc, char *argv[]) {
     int running = 1;
     Uint32 startTime, endTime;
     float fps;
+    char title[100];
 
     while (running) {
         startTime = SDL_GetTicks();
@@ -89,6 +91,10 @@ int main(int argc, char *argv[]) {
 
         endTime = SDL_GetTicks();
         fps = 1000.0 / (endTime - startTime);
+
+        // Actualizar el título de la ventana con los FPS
+        snprintf(title, sizeof(title), "Screensaver - FPS: %.2f", fps);
+        SDL_SetWindowTitle(window, title);
     }
 
     SDL_DestroyRenderer(renderer);
