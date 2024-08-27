@@ -9,6 +9,7 @@
 #define NUM_CIRCLES 20
 #define CIRCLE_RADIUS 10
 #define SPEED 3
+#define RESET_INTERVAL 5000  // Intervalo de reinicio en milisegundos (5 segundos)
 
 typedef struct {
     float x, y;
@@ -25,6 +26,11 @@ void initCircle(Circle *circle) {
     circle->color.g = rand() % 256;
     circle->color.b = rand() % 256;
     circle->color.a = 255;
+}
+
+void resetCircleSpeed(Circle *circle) {
+    circle->dx = (rand() % (2 * SPEED)) - SPEED;
+    circle->dy = (rand() % (2 * SPEED)) - SPEED;
 }
 
 void drawCircle(SDL_Renderer *renderer, Circle *circle) {
@@ -94,6 +100,7 @@ int main(int argc, char *argv[]) {
 
     int running = 1;
     Uint32 startTime, endTime;
+    Uint32 lastResetTime = SDL_GetTicks();  // Tiempo del último reinicio de velocidad
     float fps;
     char title[100];
 
@@ -118,6 +125,14 @@ int main(int argc, char *argv[]) {
             }
             updateCircle(&circles[i]);
             drawCircle(renderer, &circles[i]);
+        }
+
+        // Reiniciar la velocidad de los círculos cada 5 segundos
+        if (SDL_GetTicks() - lastResetTime > RESET_INTERVAL) {
+            for (int i = 0; i < NUM_CIRCLES; i++) {
+                resetCircleSpeed(&circles[i]);
+            }
+            lastResetTime = SDL_GetTicks();  // Actualizar el tiempo del último reinicio
         }
 
         SDL_RenderPresent(renderer);
