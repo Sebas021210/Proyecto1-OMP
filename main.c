@@ -3,6 +3,7 @@
 #include <time.h>
 #include <math.h>
 #include <stdio.h>
+#include <omp.h>
 
 #define WIDTH 640
 #define HEIGHT 480
@@ -64,7 +65,6 @@ int checkCollision(Circle *a, Circle *b) {
 }
 
 void handleCollision(Circle *a, Circle *b) {
-    // Simple elastic collision response
     float normalX = b->x - a->x;
     float normalY = b->y - a->y;
     float magnitude = sqrt(normalX * normalX + normalY * normalY);
@@ -87,10 +87,19 @@ void handleCollision(Circle *a, Circle *b) {
 }
 
 int main(int argc, char *argv[]) {
+    Uint32 initStartTime, initEndTime, initTime; // Variables para medir el tiempo de inicialización
+
+    // Registrar el tiempo de inicio
+    initStartTime = SDL_GetTicks();
+
     SDL_Init(SDL_INIT_VIDEO);
 
     SDL_Window *window = SDL_CreateWindow("Screensaver", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+    // Registrar el tiempo de fin de inicialización
+    initEndTime = SDL_GetTicks();
+    initTime = initEndTime - initStartTime;
 
     srand(time(NULL));
     Circle circles[NUM_CIRCLES];
@@ -98,11 +107,21 @@ int main(int argc, char *argv[]) {
         initCircle(&circles[i]);
     }
 
+    FILE *file = fopen("render_times.txt", "w");  // Abre el archivo para escribir los tiempos de renderizado
+    if (file == NULL) {
+        printf("No se pudo abrir el archivo para escribir los tiempos de renderizado.\n");
+        return 1;
+    }
+
+    // Escribir el tiempo de inicialización en el archivo
+    fprintf(file, "Tiempo de inicialización: %u ms\n", initTime);
+
     int running = 1;
     Uint32 startTime, endTime;
     Uint32 lastResetTime = SDL_GetTicks();  // Tiempo del último reinicio de velocidad
     float fps;
     char title[100];
+    Uint32 renderStartTime, renderEndTime;  // Variables para medir el tiempo de renderizado
 
     while (running) {
         startTime = SDL_GetTicks();
@@ -117,22 +136,45 @@ int main(int argc, char *argv[]) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
+        // Iniciar el tiempo de renderizado
+        renderStartTime = SDL_GetTicks();
+
+        #pragma omp parallel for
         for (int i = 0; i < NUM_CIRCLES; i++) {
             for (int j = i + 1; j < NUM_CIRCLES; j++) {
                 if (checkCollision(&circles[i], &circles[j])) {
+                    #pragma omp critical
                     handleCollision(&circles[i], &circles[j]);
                 }
             }
+        }
+
+        #pragma omp parallel for
+        for (int i = 0; i < NUM_CIRCLES; i++) {
             updateCircle(&circles[i]);
+            #pragma omp critical
             drawCircle(renderer, &circles[i]);
         }
 
+        // Fin del tiempo de renderizado
+        renderEndTime = SDL_GetTicks();
+
+        // Calcular el tiempo de renderizado
+        Uint32 renderTime = renderEndTime - renderStartTime;
+        fprintf(file, "Tiempo de renderizado: %u ms\n", renderTime);  // Escribir el tiempo de renderizado en el archivo
+
         // Reiniciar la velocidad de los círculos cada 5 segundos
         if (SDL_GetTicks() - lastResetTime > RESET_INTERVAL) {
-            for (int i = 0; i < NUM_CIRCLES; i++) {
-                resetCircleSpeed(&circles[i]);
+            #pragma omp parallel
+            {
+                #pragma omp single
+                lastResetTime = SDL_GetTicks();  // Actualizar el tiempo del último reinicio
+
+                #pragma omp for
+                for (int i = 0; i < NUM_CIRCLES; i++) {
+                    resetCircleSpeed(&circles[i]);
+                }
             }
-            lastResetTime = SDL_GetTicks();  // Actualizar el tiempo del último reinicio
         }
 
         SDL_RenderPresent(renderer);
@@ -145,6 +187,7 @@ int main(int argc, char *argv[]) {
         SDL_SetWindowTitle(window, title);
     }
 
+    fclose(file);  // Cerrar el archivo al terminar
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
