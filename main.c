@@ -91,17 +91,18 @@ void checkCollisions(Circle *circles, int num_circles) {
 
                 // Fusionar y crecer si la cuenta de colisiones alcanza COLLISIONS_TO_GROW
                 if (circles[i].collisionCount >= COLLISIONS_TO_GROW && circles[i].radius < MAX_RADIUS) {
-                    circles[i].radius++;
-                    circles[j].alive = 0;
-                    circles[i].collisionCount = 0;  // Reiniciar el contador solo después de crecer
-                }
-                if (circles[j].collisionCount >= COLLISIONS_TO_GROW && circles[j].radius < MAX_RADIUS) {
-                    circles[j].radius++;
-                    circles[i].alive = 0;
-                    circles[j].collisionCount = 0;  // Reiniciar el contador solo después de crecer
+                    circles[i].radius += 5;  // Aumentar el radio de 3 en 3
+                    if (circles[i].radius > MAX_RADIUS) circles[i].radius = MAX_RADIUS;  // Asegurar que no exceda el máximo
+                    circles[i].collisionCount = 0;  // Reiniciar el contador después de crecer
+                    circles[j].alive = 0;  // "Comer" el otro círculo
+                } else if (circles[j].collisionCount >= COLLISIONS_TO_GROW && circles[j].radius < MAX_RADIUS) {
+                    circles[j].radius += 5;  // Aumentar el radio de 3 en 3
+                    if (circles[j].radius > MAX_RADIUS) circles[j].radius = MAX_RADIUS;  // Asegurar que no exceda el máximo
+                    circles[j].collisionCount = 0;  // Reiniciar el contador después de crecer
+                    circles[i].alive = 0;  // "Comer" el otro círculo
                 }
 
-                // Manejar el cambio de velocidad
+                // El resto del código de manejo de colisiones permanece igual
                 float angle = atan2(dy, dx);
                 float sin_angle = sin(angle);
                 float cos_angle = cos(angle);
