@@ -6,13 +6,13 @@
 
 #define WIDTH 640
 #define HEIGHT 480
-#define NUM_CIRCLES 100
+#define NUM_CIRCLES 20
 #define CIRCLE_RADIUS 10
 #define SPEED 3
 
 typedef struct {
-    int x, y;
-    int dx, dy;
+    float x, y;
+    float dx, dy;
     SDL_Color color;
 } Circle;
 
@@ -52,6 +52,34 @@ void updateCircle(Circle *circle) {
     }
 }
 
+int checkCollision(Circle *a, Circle *b) {
+    float dist = sqrt(pow(a->x - b->x, 2) + pow(a->y - b->y, 2));
+    return dist < (2 * CIRCLE_RADIUS);
+}
+
+void handleCollision(Circle *a, Circle *b) {
+    // Simple elastic collision response
+    float normalX = b->x - a->x;
+    float normalY = b->y - a->y;
+    float magnitude = sqrt(normalX * normalX + normalY * normalY);
+    normalX /= magnitude;
+    normalY /= magnitude;
+
+    float relativeVelocityX = b->dx - a->dx;
+    float relativeVelocityY = b->dy - a->dy;
+
+    float dotProduct = relativeVelocityX * normalX + relativeVelocityY * normalY;
+
+    if (dotProduct > 0) return;
+
+    float impulse = 2.0 * dotProduct / (2 * CIRCLE_RADIUS);
+
+    a->dx += impulse * normalX;
+    a->dy += impulse * normalY;
+    b->dx -= impulse * normalX;
+    b->dy -= impulse * normalY;
+}
+
 int main(int argc, char *argv[]) {
     SDL_Init(SDL_INIT_VIDEO);
 
@@ -83,6 +111,11 @@ int main(int argc, char *argv[]) {
         SDL_RenderClear(renderer);
 
         for (int i = 0; i < NUM_CIRCLES; i++) {
+            for (int j = i + 1; j < NUM_CIRCLES; j++) {
+                if (checkCollision(&circles[i], &circles[j])) {
+                    handleCollision(&circles[i], &circles[j]);
+                }
+            }
             updateCircle(&circles[i]);
             drawCircle(renderer, &circles[i]);
         }
