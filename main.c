@@ -15,15 +15,17 @@
 #define DURATION 15000
 #define COLLISIONS_TO_GROW 10
 
+// Estructura de un círculo
 typedef struct {
-    float x, y;
-    float dx, dy;
-    SDL_Color color;
-    int radius;
-    int collisionCount;
-    int alive;
+    float x, y;           // Posición del círculo
+    float dx, dy;         // Velocidad del círculo
+    SDL_Color color;      // Colores del círculo
+    int radius;           // Radio del círculo
+    int collisionCount;   // Contador de colisiones
+    int alive;            // Estado del círculo
 } Circle;
 
+// Inicialización de un círculo con valores aleatorios
 void initCircle(Circle *circle) {
     circle->x = rand() % (WIDTH - 2 * CIRCLE_RADIUS) + CIRCLE_RADIUS;
     circle->y = rand() % (HEIGHT - 2 * CIRCLE_RADIUS) + CIRCLE_RADIUS;
@@ -38,11 +40,13 @@ void initCircle(Circle *circle) {
     circle->alive = 1;
 }
 
+// Resetea la velocidad de un círculo
 void resetCircleSpeed(Circle *circle) {
     circle->dx = (rand() % (2 * SPEED)) - SPEED;
     circle->dy = (rand() % (2 * SPEED)) - SPEED;
 }
 
+// Dibuja un círculo en el renderizador
 void drawCircle(SDL_Renderer *renderer, Circle *circle) {
     SDL_SetRenderDrawColor(renderer, circle->color.r, circle->color.g, circle->color.b, circle->color.a);
     for (int w = 0; w < circle->radius * 2; w++) {
@@ -56,13 +60,15 @@ void drawCircle(SDL_Renderer *renderer, Circle *circle) {
     }
 }
 
+// Actualización de la posición y la velocidad de los círculos
 void updateCircles(Circle *circles, int num_circles) {
-#pragma omp parallel for
+    #pragma omp parallel for
     for (int i = 0; i < num_circles; i++) {
         if (circles[i].alive) {
             circles[i].x += circles[i].dx;
             circles[i].y += circles[i].dy;
 
+            // Rebote en los bordes de la ventana
             if (circles[i].x < circles[i].radius || circles[i].x > WIDTH - circles[i].radius) {
                 circles[i].dx = -circles[i].dx;
             }
@@ -73,8 +79,9 @@ void updateCircles(Circle *circles, int num_circles) {
     }
 }
 
+// Verificación de las colisiones entre círculos
 void checkCollisions(Circle *circles, int num_circles) {
-#pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < num_circles; i++) {
         if (!circles[i].alive) continue;
         for (int j = i + 1; j < num_circles; j++) {
@@ -85,15 +92,18 @@ void checkCollisions(Circle *circles, int num_circles) {
             float distance = sqrt(dx * dx + dy * dy);
 
             if (distance < circles[i].radius + circles[j].radius) {
+                // Incremento el contador de colisiones
                 circles[i].collisionCount++;
                 circles[j].collisionCount++;
 
+                // Si un círculo ha tenido suficientes colisiones, crece y el otro muere
                 if (circles[i].collisionCount >= COLLISIONS_TO_GROW && circles[i].radius < MAX_RADIUS) {
                     circles[i].radius += 5;
                     if (circles[i].radius > MAX_RADIUS) circles[i].radius = MAX_RADIUS;
                     circles[i].collisionCount = 0;
                     circles[j].alive = 0;
 
+                    // Inicialización de un nuevo círculo en lugar del círculo que murió
                     int newCircleIndex = -1;
                     for (int k = 0; k < num_circles; k++) {
                         if (!circles[k].alive) {
@@ -110,6 +120,7 @@ void checkCollisions(Circle *circles, int num_circles) {
                     circles[j].collisionCount = 0;
                     circles[i].alive = 0;
 
+                    // Inicialización de un nuevo círculo en lugar del círculo que murió
                     int newCircleIndex = -1;
                     for (int k = 0; k < num_circles; k++) {
                         if (!circles[k].alive) {
@@ -122,6 +133,7 @@ void checkCollisions(Circle *circles, int num_circles) {
                     }
                 }
 
+                // Calculo de la nueva dirección después de la colisión
                 float angle = atan2(dy, dx);
                 float sin_angle = sin(angle);
                 float cos_angle = cos(angle);
@@ -136,7 +148,7 @@ void checkCollisions(Circle *circles, int num_circles) {
                 float new_dxj = vxj * cos_angle - vyj * sin_angle;
                 float new_dyj = vxj * sin_angle + vyj * cos_angle;
 
-#pragma omp critical
+                #pragma omp critical
                 {
                     circles[i].dx = new_dxi;
                     circles[i].dy = new_dyi;
@@ -149,8 +161,10 @@ void checkCollisions(Circle *circles, int num_circles) {
 }
 
 int main(int argc, char *argv[]) {
+    // Inicialización SDL
     SDL_Init(SDL_INIT_VIDEO);
 
+    // Creación de la ventana y el renderizador
     SDL_Window *window = SDL_CreateWindow("Screensaver", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
@@ -175,9 +189,11 @@ int main(int argc, char *argv[]) {
     double total_draw_time = 0.0;
     int measurement_count = 0;
 
+    // Bucle principal
     while (running) {
         startTime = SDL_GetTicks();
 
+        // Salir si se ha alcanzado la duración
         if (SDL_GetTicks() - windowStartTime >= DURATION) {
             running = 0;
             break;
@@ -190,19 +206,23 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        // Limpieza de la pantalla
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
+        // Actualización de la posición de los círculos
         double update_start_time = omp_get_wtime();
         updateCircles(circles, NUM_CIRCLES);
         double update_end_time = omp_get_wtime();
         total_update_time += update_end_time - update_start_time;
 
+        // Verificación de las colisiones entre círculos
         double collision_start_time = omp_get_wtime();
         checkCollisions(circles, NUM_CIRCLES);
         double collision_end_time = omp_get_wtime();
         total_collision_time += collision_end_time - collision_start_time;
 
+        // Dibuja los círculos en el renderizador
         double draw_start_time = omp_get_wtime();
         for (int i = 0; i < NUM_CIRCLES; i++) {
             if (circles[i].alive) {
@@ -214,8 +234,9 @@ int main(int argc, char *argv[]) {
 
         measurement_count++;
 
+        // Resetea la velocidad de los círculos periódicamente
         if (SDL_GetTicks() - lastResetTime > RESET_INTERVAL) {
-#pragma omp parallel for
+            #pragma omp parallel for
             for (int i = 0; i < NUM_CIRCLES; i++) {
                 resetCircleSpeed(&circles[i]);
             }
@@ -229,6 +250,7 @@ int main(int argc, char *argv[]) {
         avgFps += fps;
         frameCount++;
 
+        // Actualización del título de la ventana con el FPS actual
         if (fps < minFps) minFps = fps;
         if (fps > maxFps) maxFps = fps;
 
@@ -236,10 +258,13 @@ int main(int argc, char *argv[]) {
         SDL_SetWindowTitle(window, title);
     }
 
+    // Calculo de los FPS promedio
     avgFps /= frameCount;
 
+    // Calculo del tiempo promedio de dibujo
     double avg_draw_time = total_draw_time / measurement_count;
 
+    // Guardar los datos de rendimiento en un archivo
     FILE *file = fopen("performance_data_parallel.txt", "w");
     if (file) {
         fprintf(file, "Performance Data:\n");
@@ -250,6 +275,7 @@ int main(int argc, char *argv[]) {
         fclose(file);
     }
 
+    // Limpieza de los recursos
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
