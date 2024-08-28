@@ -7,7 +7,7 @@
 
 #define WIDTH 640
 #define HEIGHT 480
-#define NUM_CIRCLES 100
+#define NUM_CIRCLES 50
 #define CIRCLE_RADIUS 10
 #define MAX_RADIUS 30
 #define SPEED 3
@@ -74,7 +74,7 @@ void updateCircles(Circle *circles, int num_circles) {
 }
 
 void checkCollisions(Circle *circles, int num_circles) {
-#pragma omp parallel for schedule(dynamic)
+#pragma omp parallel for schedule(static)
     for (int i = 0; i < num_circles; i++) {
         if (!circles[i].alive) continue;
         for (int j = i + 1; j < num_circles; j++) {
@@ -85,24 +85,43 @@ void checkCollisions(Circle *circles, int num_circles) {
             float distance = sqrt(dx * dx + dy * dy);
 
             if (distance < circles[i].radius + circles[j].radius) {
-                // Incrementar la cuenta de colisiones
                 circles[i].collisionCount++;
                 circles[j].collisionCount++;
 
-                // Fusionar y crecer si la cuenta de colisiones alcanza COLLISIONS_TO_GROW
                 if (circles[i].collisionCount >= COLLISIONS_TO_GROW && circles[i].radius < MAX_RADIUS) {
-                    circles[i].radius += 5;  // Aumentar el radio de 3 en 3
-                    if (circles[i].radius > MAX_RADIUS) circles[i].radius = MAX_RADIUS;  // Asegurar que no exceda el máximo
-                    circles[i].collisionCount = 0;  // Reiniciar el contador después de crecer
-                    circles[j].alive = 0;  // "Comer" el otro círculo
+                    circles[i].radius += 5;
+                    if (circles[i].radius > MAX_RADIUS) circles[i].radius = MAX_RADIUS;
+                    circles[i].collisionCount = 0;
+                    circles[j].alive = 0;
+
+                    int newCircleIndex = -1;
+                    for (int k = 0; k < num_circles; k++) {
+                        if (!circles[k].alive) {
+                            newCircleIndex = k;
+                            break;
+                        }
+                    }
+                    if (newCircleIndex != -1) {
+                        initCircle(&circles[newCircleIndex]);
+                    }
                 } else if (circles[j].collisionCount >= COLLISIONS_TO_GROW && circles[j].radius < MAX_RADIUS) {
-                    circles[j].radius += 5;  // Aumentar el radio de 3 en 3
-                    if (circles[j].radius > MAX_RADIUS) circles[j].radius = MAX_RADIUS;  // Asegurar que no exceda el máximo
-                    circles[j].collisionCount = 0;  // Reiniciar el contador después de crecer
-                    circles[i].alive = 0;  // "Comer" el otro círculo
+                    circles[j].radius += 5;
+                    if (circles[j].radius > MAX_RADIUS) circles[j].radius = MAX_RADIUS;
+                    circles[j].collisionCount = 0;
+                    circles[i].alive = 0;
+
+                    int newCircleIndex = -1;
+                    for (int k = 0; k < num_circles; k++) {
+                        if (!circles[k].alive) {
+                            newCircleIndex = k;
+                            break;
+                        }
+                    }
+                    if (newCircleIndex != -1) {
+                        initCircle(&circles[newCircleIndex]);
+                    }
                 }
 
-                // El resto del código de manejo de colisiones permanece igual
                 float angle = atan2(dy, dx);
                 float sin_angle = sin(angle);
                 float cos_angle = cos(angle);
@@ -112,14 +131,18 @@ void checkCollisions(Circle *circles, int num_circles) {
                 float vxj = circles[j].dx * cos_angle + circles[j].dy * sin_angle;
                 float vyj = -circles[j].dx * sin_angle + circles[j].dy * cos_angle;
 
-                float temp = vxi;
-                vxi = vxj;
-                vxj = temp;
+                float new_dxi = vxi * cos_angle - vyi * sin_angle;
+                float new_dyi = vxi * sin_angle + vyi * cos_angle;
+                float new_dxj = vxj * cos_angle - vyj * sin_angle;
+                float new_dyj = vxj * sin_angle + vyj * cos_angle;
 
-                circles[i].dx = vxi * cos_angle - vyi * sin_angle;
-                circles[i].dy = vxi * sin_angle + vyi * cos_angle;
-                circles[j].dx = vxj * cos_angle - vyj * sin_angle;
-                circles[j].dy = vxj * sin_angle + vyj * cos_angle;
+#pragma omp critical
+                {
+                    circles[i].dx = new_dxi;
+                    circles[i].dy = new_dyi;
+                    circles[j].dx = new_dxj;
+                    circles[j].dy = new_dyj;
+                }
             }
         }
     }
@@ -147,6 +170,11 @@ int main(int argc, char *argv[]) {
     float minFps = 1000.0, maxFps = 0.0, avgFps = 0.0;
     int frameCount = 0;
 
+    double total_update_time = 0.0;
+    double total_collision_time = 0.0;
+    double total_draw_time = 0.0;
+    int measurement_count = 0;
+
     while (running) {
         startTime = SDL_GetTicks();
 
@@ -165,16 +193,26 @@ int main(int argc, char *argv[]) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
+        double update_start_time = omp_get_wtime();
         updateCircles(circles, NUM_CIRCLES);
-        checkCollisions(circles, NUM_CIRCLES);
+        double update_end_time = omp_get_wtime();
+        total_update_time += update_end_time - update_start_time;
 
-#pragma omp parallel for
+        double collision_start_time = omp_get_wtime();
+        checkCollisions(circles, NUM_CIRCLES);
+        double collision_end_time = omp_get_wtime();
+        total_collision_time += collision_end_time - collision_start_time;
+
+        double draw_start_time = omp_get_wtime();
         for (int i = 0; i < NUM_CIRCLES; i++) {
             if (circles[i].alive) {
-#pragma omp critical
                 drawCircle(renderer, &circles[i]);
             }
         }
+        double draw_end_time = omp_get_wtime();
+        total_draw_time += draw_end_time - draw_start_time;
+
+        measurement_count++;
 
         if (SDL_GetTicks() - lastResetTime > RESET_INTERVAL) {
 #pragma omp parallel for
@@ -200,9 +238,15 @@ int main(int argc, char *argv[]) {
 
     avgFps /= frameCount;
 
-    FILE *file = fopen("fps_data_parallel.txt", "w");
+    double avg_draw_time = total_draw_time / measurement_count;
+
+    FILE *file = fopen("performance_data_parallel.txt", "w");
     if (file) {
-        fprintf(file, "Min FPS: %.2f\nMax FPS: %.2f\nAvg FPS: %.2f\n", minFps, maxFps, avgFps);
+        fprintf(file, "Performance Data:\n");
+        fprintf(file, "Min FPS: %.2f\n", minFps);
+        fprintf(file, "Max FPS: %.2f\n", maxFps);
+        fprintf(file, "Avg FPS: %.2f\n", avgFps);
+        fprintf(file, "Avg Draw Time: %.6f seconds\n", avg_draw_time);
         fclose(file);
     }
 
